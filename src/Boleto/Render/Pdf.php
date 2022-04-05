@@ -6,6 +6,8 @@ use Eduardokum\LaravelBoleto\Contracts\Boleto\Boleto as BoletoContract;
 use Eduardokum\LaravelBoleto\Contracts\Boleto\Render\Pdf as PdfContract;
 use Eduardokum\LaravelBoleto\Util;
 use Illuminate\Support\Str;
+use Mpdf\QrCode\Output\Png;
+use Mpdf\QrCode\QrCode;
 
 class Pdf extends AbstractPdf implements PdfContract
 {
@@ -126,6 +128,42 @@ class Pdf extends AbstractPdf implements PdfContract
         return $this;
     }
 
+    protected function pixBoleto($i)
+    {
+        $this->Ln(2);
+        $this->SetFont($this->PadraoFont, '', $this->fdes);
+
+        $logo = preg_replace('/\&.*/', '', $this->boleto[$i]->getLogoPix());
+        $ext = pathinfo($logo, PATHINFO_EXTENSION);
+
+        if ($this->boleto[$i]->getLogoPix() && !empty($this->boleto[$i]->getLogoPix())
+            && !is_null($this->boleto[$i]->getPixPayload())) {
+            $this->Image($this->boleto[$i]->getLogoPix(), 20, ($this->GetY()), 0, 12, $ext);
+            $file_name = Str::uuid() . ".png";
+
+            $qr_code = new QrCode($this->boleto[$i]->getPixPayload());
+            $png = new Png();
+            $data = $png->output($qr_code, 300, [255, 255, 255], [0, 0, 0]);
+
+            if (file_put_contents($file_name, $data) !== false) {
+                $this->Image($file_name, 20, ($this->GetY()), 0, 12);
+                unlink($file_name);
+            }
+
+        }
+        $this->Cell(56);
+//        $this->Cell(0, $this->desc, $this->_($this->boleto[$i]->getBeneficiario()->getNome()), 0, 1);
+        $this->Cell(56);
+//        $this->Cell(0, $this->desc, $this->_($this->boleto[$i]->getBeneficiario()->getDocumento(), '##.###.###/####-##'), 0, 1);
+        $this->Cell(56);
+//        $this->Cell(0, $this->desc, $this->_($this->boleto[$i]->getBeneficiario()->getEndereco()), 0, 1);
+        $this->Cell(56);
+//        $this->Cell(0, $this->desc, $this->_($this->boleto[$i]->getBeneficiario()->getCepCidadeUf()), 0, 1);
+        $this->Ln(20);
+
+        return $this;
+    }
+
     /**
      * @param integer $i
      *
@@ -236,7 +274,7 @@ class Pdf extends AbstractPdf implements PdfContract
         $xBeneficiario = $this->GetX();
         $yBeneficiario = $this->GetY();
         $this->Cell(50, $this->cell, $this->_($this->boleto[$i]->getAgenciaCodigoBeneficiario()), 'R', 1, 'R');
-        if($this->boleto[$i]->getMostrarEnderecoFichaCompensacao()) {
+        if ($this->boleto[$i]->getMostrarEnderecoFichaCompensacao()) {
             $this->SetXY($xBeneficiario, $yBeneficiario);
             $this->Ln(4);
             $this->SetFont($this->PadraoFont, 'B', $this->fcel);
@@ -357,7 +395,11 @@ class Pdf extends AbstractPdf implements PdfContract
         if (count($this->boleto[$i]->getInstrucoes()) > 0) {
             $this->SetXY($xInstrucoes, $yInstrucoes);
             $this->Ln(1);
-            $this->SetFont($this->PadraoFont, 'B', $this->fcel);
+            $this->SetFont($this->PadraoFont, '', 5);
+
+            $instrucoes = collect($this->boleto[$i]->getInstrucoes())->map(function ($item) {
+                return strip_tags($item);
+            })->toArray();
 
             $this->listaLinhas($this->boleto[$i]->getInstrucoes(), 0);
 
@@ -383,7 +425,7 @@ class Pdf extends AbstractPdf implements PdfContract
         if ($texto && $posicaoTexto !== -1) {
             $this->Cell(0, 2, $this->_($texto), 0, 1, $alinhamentoTexto);
         }
-        $this->Cell(0,  2, str_pad('-', $tamanho, ' -', STR_PAD_RIGHT), 0, 1);
+        $this->Cell(0, 2, str_pad('-', $tamanho, ' -', STR_PAD_RIGHT), 0, 1);
         if ($texto && $posicaoTexto === -1) {
             $this->Cell(0, 2, $this->_($texto), 0, 1, $alinhamentoTexto);
         }
@@ -473,7 +515,8 @@ class Pdf extends AbstractPdf implements PdfContract
         for ($i = 0; $i < $this->totalBoletos; $i++) {
             $this->SetDrawColor('0', '0', '0');
             $this->AddPage();
-            $this->instrucoes($i)->logoEmpresa($i)->Topo($i)->Bottom($i)->codigoBarras($i);
+            $this->instrucoes($i)->pixBoleto($i)->Topo($i)->Bottom($i)->codigoBarras($i);
+
         }
         if ($dest == self::OUTPUT_SAVE) {
             $this->Output($save_path, $dest, $this->print);
@@ -482,7 +525,7 @@ class Pdf extends AbstractPdf implements PdfContract
         if ($nameFile == null) {
             $nameFile = Str::random(32);
         }
-        
+
         return $this->Output($nameFile . '.pdf', $dest, $this->print);
     }
 
